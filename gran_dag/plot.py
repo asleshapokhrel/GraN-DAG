@@ -91,19 +91,20 @@ def plot_weighted_adjacency(weighted_adjacency, gt_adjacency, exp_path, name="ab
 
 def plot_adjacency(adjacency, gt_adjacency, exp_path, name=''):
     plt.clf()
-    f, (ax1, ax2, ax3) = plt.subplots(ncols=3, nrows=1)
+    # f, (ax1, ax2, ax3) = plt.subplots(ncols=3, nrows=1)
+    f, (ax1, ax2) = plt.subplots(ncols=2, nrows=1)
     sns.heatmap(adjacency, ax=ax1, cbar=False, vmin=-1, vmax=1, cmap="Blues_r", xticklabels=False, yticklabels=False)
     sns.heatmap(gt_adjacency, ax=ax2, cbar=False, vmin=-1, vmax=1, cmap="Blues_r", xticklabels=False, yticklabels=False)
-    sns.heatmap(adjacency - gt_adjacency, ax=ax3, cbar=False, vmin=-1, vmax=1, cmap="Blues_r", xticklabels=False,
-                yticklabels=False)
+    # sns.heatmap(adjacency - gt_adjacency, ax=ax3, cbar=False, vmin=-1, vmax=1, cmap="Blues_r", xticklabels=False,
+    #             yticklabels=False)
 
     ax1.set_title("Learned")
     ax2.set_title("Ground truth")
-    ax3.set_title("Learned - GT")
+    # ax3.set_title("Learned - GT")
 
     ax1.set_aspect('equal', adjustable='box')
     ax2.set_aspect('equal', adjustable='box')
-    ax3.set_aspect('equal', adjustable='box')
+    # ax3.set_aspect('equal', adjustable='box')
 
     plt.savefig(os.path.join(exp_path, 'adjacency' + name + '.png'))
 

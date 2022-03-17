@@ -39,13 +39,19 @@ class DataManagerFile(object):
         """
         self.random = np.random.RandomState(random_seed)
 
-        # Load the graph
-        adjacency = np.load(os.path.join(file_path, "DAG{}.npy".format(i_dataset)))
-        self.adjacency = torch.as_tensor(adjacency).type(torch.Tensor)
+        # # Load the graph
+        # adjacency = np.load(os.path.join(file_path, "DAG{}.npy".format(i_dataset)))
+        # self.adjacency = torch.as_tensor(adjacency).type(torch.Tensor)
 
         # Load data
         self.data_path = os.path.join(file_path, "data{}.npy".format(i_dataset))
         data = np.load(self.data_path)
+
+        try:
+            adjacency = np.load(os.path.join(file_path, "DAG{}.npy".format(i_dataset)))
+            self.adjacency = torch.as_tensor(adjacency).type(torch.Tensor)
+        except:
+            self.adjacency = torch.as_tensor(np.ones((data.shape[1], data.shape[1]))).type(torch.Tensor)
 
         # Determine train/test partitioning
         if isinstance(train_samples, float):

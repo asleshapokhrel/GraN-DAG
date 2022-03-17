@@ -65,7 +65,7 @@ def main(opt, metrics_callback=None, plotting_callback=None):
     dump(shd, opt.exp_path, 'shd', True)
     np.save(os.path.join(opt.exp_path, "DAG"), dag)
 
-    plot_adjacency(gt_dag, dag, opt.exp_path)
+    plot_adjacency(dag, gt_dag, opt.exp_path)
 
 def _print_metrics(stage, step, metrics, throttle=None):
     for k, v in metrics.items():

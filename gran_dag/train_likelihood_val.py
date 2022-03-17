@@ -294,6 +294,8 @@ def train(model, gt_adjacency, train_data, test_data, opt, metrics_callback, plo
     Applying augmented Lagrangian to solve the continuous constrained problem.
 
     """
+    
+    dag_path = os.path.join("../likelihood_validation/exp_real_1_4_pc_node14/DAG.npy")
 
     # Prepare path for saving results
     save_path = os.path.join(opt.exp_path, "train")
@@ -313,8 +315,8 @@ def train(model, gt_adjacency, train_data, test_data, opt, metrics_callback, plo
     aug_lagrangians_val = []
     grad_norms = []
     grad_norm_ma = [0.0] * (opt.num_train_iter + 1)
-    if not opt.no_w_adjs_log:
-        w_adjs = np.zeros((opt.num_train_iter, opt.num_vars, opt.num_vars), dtype=np.float32)
+    # if not opt.no_w_adjs_log:
+    #     w_adjs = np.zeros((opt.num_train_iter, opt.num_vars, opt.num_vars), dtype=np.float32)
     hs = []
     not_nlls = []  # Augmented Lagrangrian minus (pseudo) NLL
     nlls = []  # NLL on train
@@ -334,7 +336,7 @@ def train(model, gt_adjacency, train_data, test_data, opt, metrics_callback, plo
     else:
         raise NotImplementedError("optimizer {} is not implemented".format(opt.optimizer))
     
-    # model.adjacency = torch.from_numpy(np.load(dag_path))
+    model.adjacency = torch.from_numpy(np.load(dag_path))
 
     # Learning loop:
     for iter in range(opt.num_train_iter):
@@ -347,7 +349,8 @@ def train(model, gt_adjacency, train_data, test_data, opt, metrics_callback, plo
         model.eval()
 
         # constraint related
-        w_adj = model.get_w_adj()
+        # w_adj = model.get_w_adj()
+        w_adj = torch.from_numpy(np.load(dag_path))
         h = compute_constraint(model, w_adj)
 
         # compute augmented langrangian
@@ -358,15 +361,15 @@ def train(model, gt_adjacency, train_data, test_data, opt, metrics_callback, plo
         aug_lagrangian.backward()
         optimizer.step()
 
-        # clamp edges
-        if opt.edge_clamp_range != 0:
-            with torch.no_grad():
-                to_keep = (w_adj > opt.edge_clamp_range).type(torch.Tensor)
-                model.adjacency *= to_keep
+        # # clamp edges
+        # if opt.edge_clamp_range != 0:
+        #     with torch.no_grad():
+        #         to_keep = (w_adj > opt.edge_clamp_range).type(torch.Tensor)
+        #         model.adjacency *= to_keep
 
         # logging
-        if not opt.no_w_adjs_log:
-            w_adjs[iter, :, :] = w_adj.detach().cpu().numpy().astype(np.float32)
+        # if not opt.no_w_adjs_log:
+        #     w_adjs[iter, :, :] = w_adj.detach().cpu().numpy().astype(np.float32)
         mus.append(mu)
         lambdas.append(lamb)
         not_nlls.append(0.5 * mu * h.item() ** 2 + lamb * h.item())
@@ -407,10 +410,10 @@ def train(model, gt_adjacency, train_data, test_data, opt, metrics_callback, plo
 
             # XXX: just for debug (graph metrics in real-time)
             with torch.no_grad():
-                to_keep = (model.get_w_adj() > opt.edge_clamp_range).type(torch.Tensor)
-                current_adj = model.adjacency * to_keep
-                current_adj = current_adj.cpu().numpy()
-                fn, fp, rev = edge_errors(current_adj, gt_adjacency)
+                # to_keep = (model.get_w_adj() > opt.edge_clamp_range).type(torch.Tensor)
+                # current_adj = model.adjacency * to_keep
+                # current_adj = current_adj.cpu().numpy()
+                fn, fp, rev = edge_errors(w_adj.cpu().numpy(), gt_adjacency)
 
             metrics_callback(stage="train", step=iter,
                              metrics={"aug-lagrangian": aug_lagrangian.item(),
@@ -437,13 +440,26 @@ def train(model, gt_adjacency, train_data, test_data, opt, metrics_callback, plo
 
         # plot
         if iter % opt.plot_freq == 0:
-            if not opt.no_w_adjs_log:
-                plot_weighted_adjacency(w_adjs[:iter + 1], gt_adjacency, opt.exp_path,
-                                        name="w_adj", mus=mus, lambdas=lambdas,
-                                        plotting_callback=plotting_callback)
+            # if not opt.no_w_adjs_log:
+            #     plot_weighted_adjacency(w_adjs[:iter + 1], gt_adjacency, opt.exp_path,
+            #                             name="w_adj", mus=mus, lambdas=lambdas,
+            #                             plotting_callback=plotting_callback)
             plot_adjacency(w_adj, gt_adjacency, opt.exp_path)
             plot_learning_curves(not_nlls, aug_lagrangians, aug_lagrangian_ma[:iter], aug_lagrangians_val, nlls,
                                  nlls_val, opt.exp_path)
+
+            # compute nll on train and validation set
+            weights, biases, extra_params = model.get_parameters(mode="wbx")
+            x, _ = train_data.sample(train_data.num_samples)
+            # Since we do not have a DAG yet, this is not really a negative log likelihood.
+            nll_train = - torch.mean(model.compute_log_likelihood(x, weights, biases, extra_params))
+
+            x, _ = test_data.sample(test_data.num_samples)
+            nll_val = - torch.mean(model.compute_log_likelihood(x, weights, biases, extra_params))
+
+            with open(os.path.join(save_path, "results.txt"), "w") as f:
+                f.write("nll_train: {}, nll_val: {}, not_nlls: {}, aug_lagrangians_val: {}".format(nll_train, 
+                nll_val, not_nlls, aug_lagrangians_val))
 
         # Does the augmented lagrangian converged?
         if h > opt.h_threshold:
@@ -473,10 +489,10 @@ def train(model, gt_adjacency, train_data, test_data, opt, metrics_callback, plo
         else:
             timing = time.time() - time0
 
-            # Final clamping of all edges == 0
-            with torch.no_grad():
-                to_keep = (w_adj > 0).type(torch.Tensor)
-                model.adjacency *= to_keep
+            # # Final clamping of all edges == 0
+            # with torch.no_grad():
+            #     to_keep = (w_adj > 0).type(torch.Tensor)
+            #     model.adjacency *= to_keep
 
             # compute nll on train and validation set
             weights, biases, extra_params = model.get_parameters(mode="wbx")
@@ -488,12 +504,12 @@ def train(model, gt_adjacency, train_data, test_data, opt, metrics_callback, plo
             nll_val = - torch.mean(model.compute_log_likelihood(x, weights, biases, extra_params))
 
             # Save
-            if not opt.no_w_adjs_log:
-                w_adjs = w_adjs[:iter]
+            # if not opt.no_w_adjs_log:
+            #     w_adjs = w_adjs[:iter]
             dump(model, save_path, 'model')
             dump(opt, save_path, 'opt')
-            if opt.num_vars <= 50 and not opt.no_w_adjs_log:
-                dump(w_adjs, save_path, 'w_adjs')
+            # if opt.num_vars <= 50 and not opt.no_w_adjs_log:
+            #     dump(w_adjs, save_path, 'w_adjs')
             dump(nll_train, save_path, 'pseudo-nll-train')
             dump(nll_val, save_path, 'pseudo-nll-val')
             dump(not_nlls, save_path, 'not-nlls')
@@ -503,13 +519,17 @@ def train(model, gt_adjacency, train_data, test_data, opt, metrics_callback, plo
             dump(grad_norms, save_path, 'grad-norms')
             dump(grad_norm_ma[:iter], save_path, 'grad-norm-ma')
             dump(timing, save_path, 'timing')
-            np.save(os.path.join(save_path, "DAG"), model.adjacency.detach().cpu().numpy())
+            np.save(os.path.join(save_path, "DAG"), w_adj)
+
+            with open(os.path.join(save_path, "results.txt"), "w") as f:
+                f.write("nll_train: {} nll_val: {} aug_lagrangians_val: {} aug_lagrangians: {} aug_lagrangian_ma: {}".format(nll_train, 
+                nll_val, aug_lagrangians_val, aug_lagrangians, aug_lagrangian_ma))
 
             # plot
-            if not opt.no_w_adjs_log:
-                plot_weighted_adjacency(w_adjs, gt_adjacency, save_path,
-                                        name="w_adj", mus=mus, lambdas=lambdas)
-            plot_adjacency(model.adjacency.detach().cpu().numpy(), gt_adjacency, save_path)
+            # if not opt.no_w_adjs_log:
+            #     plot_weighted_adjacency(w_adjs, gt_adjacency, save_path,
+            #                             name="w_adj", mus=mus, lambdas=lambdas)
+            plot_adjacency(w_adj, gt_adjacency, save_path)
             plot_learning_curves(not_nlls, aug_lagrangians, aug_lagrangian_ma[:iter], aug_lagrangians_val, nlls,
                                  nlls_val, save_path)
 
